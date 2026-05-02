@@ -1,0 +1,16 @@
+{
+  "name": "Laptop-Friendly Places",
+  "short_name": "LaptopFriendly",
+  "description": "Find laptop-friendly workspaces near you",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#7c3aed",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

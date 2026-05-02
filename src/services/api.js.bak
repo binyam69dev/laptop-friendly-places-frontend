@@ -1,0 +1,74 @@
+﻿import axios from 'axios'
+
+const API_BASE_URL = '/api'
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Request interceptor - add auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('authToken')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+// Response interceptor - handle errors
+api.interceptors.response.use(
+  (response) => response.data,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('authToken')
+      localStorage.removeItem('user')
+      window.location.href = '/login'
+    }
+    return Promise.reject(error.response?.data || error.message)
+  }
+)
+
+// ==================== AUTH API ====================
+export const authAPI = {
+  register: (userData) => api.post('/auth/register', userData),
+  login: (credentials) => api.post('/auth/login', credentials),
+  logout: () => api.post('/auth/logout'),
+  getProfile: () => api.get('/users/profile'),
+  updateProfile: (data) => api.put('/users/profile', data),
+}
+
+// ==================== PLACES API ====================
+export const placesAPI = {
+  getAll: (params = {}) => api.get('/places', { params }),
+  getById: (id) => api.get(`/places/${id}`),
+  getNearby: (lat, lng, radius = 5000) => 
+    api.get('/places/nearby', { params: { lat, lng, radius } }),
+  create: (data) => api.post('/places', data),
+  update: (id, data) => api.put(`/places/${id}`, data),
+  delete: (id) => api.delete(`/places/${id}`),
+}
+
+// ==================== REVIEWS API ====================
+export const reviewsAPI = {
+  create: (data) => api.post('/reviews', data),
+  update: (id, data) => api.put(`/reviews/${id}`, data),
+  delete: (id) => api.delete(`/reviews/${id}`),
+  getByPlace: (placeId) => api.get(`/reviews/place/${placeId}`),
+}
+
+// ==================== FAVORITES API ====================
+export const favoritesAPI = {
+  getAll: () => api.get('/favorites'),
+  add: (placeId) => api.post('/favorites', { placeId }),
+  remove: (placeId) => api.delete(`/favorites/${placeId}`),
+  check: (placeId) => api.get(`/favorites/check/${placeId}`),
+}
+
+export default api
