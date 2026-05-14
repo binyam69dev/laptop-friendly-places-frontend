@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+﻿import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import { DarkModeProvider, useDarkMode } from './context/DarkModeContext'
 import Navbar from './components/Navbar'
@@ -21,6 +21,8 @@ const Places = lazy(() => import('./pages/Places'))
 const Settings = lazy(() => import('./pages/Settings'))
 const About = lazy(() => import('./pages/About'))
 const NotFound = lazy(() => import('./pages/NotFound'))
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 
 function MainLayout({ children }) {
   const { isDarkMode } = useDarkMode()
@@ -47,6 +49,8 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/home" element={<MainLayout><Home /></MainLayout>} />
         <Route path="/places" element={<MainLayout><Places /></MainLayout>} />
         <Route path="/place/:id" element={<MainLayout><PlaceDetails /></MainLayout>} />
@@ -71,3 +75,4 @@ function App() {
 }
 
 export default App
+

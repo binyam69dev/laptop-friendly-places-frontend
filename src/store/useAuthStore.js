@@ -15,27 +15,35 @@ const useAuthStore = create((set, get) => ({
     set({ isLoading: true })
     try {
       const data = await apiLogin(email, password)
-      if (data.accessToken) {
-        const storage = rememberMe ? localStorage : sessionStorage
-        storage.setItem('token', data.accessToken)
-        storage.setItem('user', JSON.stringify(data.user))
+      console.log('Login API response:', data)
+      
+      if (data.accessToken || data.token) {
+        const token = data.accessToken || data.token
+        const userData = data.user
         
-        // Also store in localStorage for persistence across tabs if rememberMe
-        if (rememberMe) {
-          localStorage.setItem('token', data.accessToken)
-          localStorage.setItem('user', JSON.stringify(data.user))
-        }
+        console.log('User data from API:', userData)
+        console.log('User role:', userData?.role)
+        
+        const storage = rememberMe ? localStorage : sessionStorage
+        storage.setItem('token', token)
+        storage.setItem('user', JSON.stringify(userData))
+        
+        // Also store in localStorage for persistence
+        localStorage.setItem('token', token)
+        localStorage.setItem('user', JSON.stringify(userData))
         
         set({ 
-          user: data.user, 
-          token: data.accessToken, 
+          user: userData, 
+          token: token, 
           isAuthenticated: true, 
           isLoading: false 
         })
-        return { success: true, user: data.user }
+        
+        return { success: true, user: userData }
       }
       throw new Error(data.error || 'Login failed')
     } catch (error) {
+      console.error('Login error:', error)
       set({ isLoading: false })
       return { success: false, error: error.message }
     }
@@ -49,16 +57,20 @@ const useAuthStore = create((set, get) => ({
     set({ isLoading: true })
     try {
       const data = await apiRegister(name, email, password)
-      if (data.accessToken) {
-        localStorage.setItem('token', data.accessToken)
-        localStorage.setItem('user', JSON.stringify(data.user))
+      if (data.accessToken || data.token) {
+        const token = data.accessToken || data.token
+        const userData = data.user
+        
+        localStorage.setItem('token', token)
+        localStorage.setItem('user', JSON.stringify(userData))
+        
         set({ 
-          user: data.user, 
-          token: data.accessToken, 
+          user: userData, 
+          token: token, 
           isAuthenticated: true, 
           isLoading: false 
         })
-        return { success: true, user: data.user }
+        return { success: true, user: userData }
       }
       throw new Error(data.error || 'Registration failed')
     } catch (error) {
@@ -70,8 +82,12 @@ const useAuthStore = create((set, get) => ({
   updateProfile: async (updates) => {
     set({ isLoading: true })
     try {
-      const token = localStorage.getItem('token')
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/users/profile`, {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+      if (!token) {
+        throw new Error('No authentication token found')
+      }
+      
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/users/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -80,10 +96,14 @@ const useAuthStore = create((set, get) => ({
         body: JSON.stringify(updates)
       })
       
-      if (!response.ok) throw new Error('Update failed')
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.message || 'Update failed')
+      }
       
       const updatedUser = await response.json()
       localStorage.setItem('user', JSON.stringify(updatedUser))
+      sessionStorage.setItem('user', JSON.stringify(updatedUser))
       set({ user: updatedUser, isLoading: false })
       return { success: true, user: updatedUser }
     } catch (error) {
@@ -91,7 +111,7 @@ const useAuthStore = create((set, get) => ({
       return { success: false, error: error.message }
     }
   },
-  
+
   logout: () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -102,15 +122,23 @@ const useAuthStore = create((set, get) => ({
 
   checkAuth: () => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token')
-    const user = localStorage.getItem('user') || sessionStorage.getItem('user')
-    if (token && user) {
+    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+    
+    console.log('checkAuth - token exists:', !!token)
+    console.log('checkAuth - userStr exists:', !!userStr)
+    
+    if (token && userStr) {
       try {
-        const parsedUser = JSON.parse(user)
-        if (parsedUser && parsedUser.email) {
-          set({ user: parsedUser, token, isAuthenticated: true })
+        const user = JSON.parse(userStr)
+        console.log('checkAuth - parsed user:', user)
+        console.log('checkAuth - user role:', user?.role)
+        
+        if (user && user.email) {
+          set({ user: user, token: token, isAuthenticated: true })
           return true
         }
       } catch (e) {
+        console.error('Failed to parse user:', e)
         localStorage.removeItem('user')
         sessionStorage.removeItem('user')
       }
@@ -121,7 +149,9 @@ const useAuthStore = create((set, get) => ({
 
   isAdmin: () => {
     const { user } = get()
-    return user?.role === 'ADMIN' || user?.role === 'admin'
+    const isUserAdmin = user?.role === 'ADMIN' || user?.role === 'admin'
+    console.log('isAdmin() - user role:', user?.role, 'result:', isUserAdmin)
+    return isUserAdmin
   },
 
   isAuthenticatedUser: () => {
