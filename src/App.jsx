@@ -7,7 +7,7 @@ import ProtectedRoute from "./components/Auth/ProtectedRoute"
 import Footer from './components/Footer'
 import AnimatedPage from "./components/AnimatedPage"
 import ScrollToTop from './components/ScrollToTop'
-import './styles/index.css'
+import './index.css'
 
 const Landing = lazy(() => import('./pages/Landing'))
 const Home = lazy(() => import('./pages/Home'))

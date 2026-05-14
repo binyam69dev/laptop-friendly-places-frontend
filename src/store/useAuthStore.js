@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+﻿import { create } from 'zustand'
 import { login as apiLogin, register as apiRegister } from '../services/api'
 
 const useAuthStore = create((set, get) => ({
@@ -7,7 +7,7 @@ const useAuthStore = create((set, get) => ({
   isAuthenticated: false,
   isLoading: false,
 
-  login: async (email, password) => {
+  login: async (email, password, rememberMe = false) => {
     if (!email || !password) {
       return { success: false, error: 'Email and password are required' }
     }
@@ -16,15 +16,22 @@ const useAuthStore = create((set, get) => ({
     try {
       const data = await apiLogin(email, password)
       if (data.accessToken) {
-        localStorage.setItem('token', data.accessToken)
-        localStorage.setItem('user', JSON.stringify(data.user))
+        const storage = rememberMe ? localStorage : sessionStorage
+        storage.setItem('token', data.accessToken)
+        storage.setItem('user', JSON.stringify(data.user))
+        
+        // Also store in localStorage for persistence across tabs if rememberMe
+        if (rememberMe) {
+          localStorage.setItem('token', data.accessToken)
+          localStorage.setItem('user', JSON.stringify(data.user))
+        }
+        
         set({ 
           user: data.user, 
           token: data.accessToken, 
           isAuthenticated: true, 
           isLoading: false 
         })
-        console.log('User logged in:', data.user.email, 'Role:', data.user.role)
         return { success: true, user: data.user }
       }
       throw new Error(data.error || 'Login failed')
@@ -60,25 +67,52 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+  updateProfile: async (updates) => {
+    set({ isLoading: true })
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/users/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(updates)
+      })
+      
+      if (!response.ok) throw new Error('Update failed')
+      
+      const updatedUser = await response.json()
+      localStorage.setItem('user', JSON.stringify(updatedUser))
+      set({ user: updatedUser, isLoading: false })
+      return { success: true, user: updatedUser }
+    } catch (error) {
+      set({ isLoading: false })
+      return { success: false, error: error.message }
+    }
+  },
+  
   logout: () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    sessionStorage.removeItem('token')
+    sessionStorage.removeItem('user')
     set({ user: null, token: null, isAuthenticated: false, isLoading: false })
   },
 
   checkAuth: () => {
-    const token = localStorage.getItem('token')
-    const user = localStorage.getItem('user')
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+    const user = localStorage.getItem('user') || sessionStorage.getItem('user')
     if (token && user) {
       try {
         const parsedUser = JSON.parse(user)
         if (parsedUser && parsedUser.email) {
           set({ user: parsedUser, token, isAuthenticated: true })
-          console.log('Auth restored:', parsedUser.email, 'Role:', parsedUser.role)
           return true
         }
       } catch (e) {
         localStorage.removeItem('user')
+        sessionStorage.removeItem('user')
       }
     }
     set({ isAuthenticated: false, user: null, token: null })
@@ -87,9 +121,7 @@ const useAuthStore = create((set, get) => ({
 
   isAdmin: () => {
     const { user } = get()
-    const isUserAdmin = user?.role === 'ADMIN' || user?.role === 'admin'
-    console.log('isAdmin check:', isUserAdmin, 'User role:', user?.role)
-    return isUserAdmin
+    return user?.role === 'ADMIN' || user?.role === 'admin'
   },
 
   isAuthenticatedUser: () => {

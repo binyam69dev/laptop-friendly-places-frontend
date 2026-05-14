@@ -1,6 +1,6 @@
-import { useState } from 'react'
+﻿import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload, MapPin, Wifi, Zap, Coffee, DollarSign, X, Image, Video, Loader2 } from 'lucide-react'
+import { PlusCircle, MapPin, Wifi, Zap, Coffee, Star, Loader2, CheckCircle, Upload, Image, Video, X, Trash2 } from 'lucide-react'
 import useAuthStore from '../store/useAuthStore'
 import { useDarkMode } from '../context/DarkModeContext'
 import { toast } from 'sonner'
@@ -10,339 +10,466 @@ const Contributor = () => {
   const { isAuthenticated } = useAuthStore()
   const { isDarkMode } = useDarkMode()
   const [loading, setLoading] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [images, setImages] = useState([])
   const [videos, setVideos] = useState([])
-  const [imagePreviews, setImagePreviews] = useState([])
-  const [videoPreviews, setVideoPreviews] = useState([])
+  const fileInputRef = useRef(null)
+  const videoInputRef = useRef(null)
+  
   const [formData, setFormData] = useState({
     name: '',
     address: '',
     city: '',
     description: '',
-    hasWifi: true,
-    hasPowerOutlets: true,
-    hasCoffee: true,
-    priceLevel: 'MODERATE',
-    placeType: 'cafe'
+    wifi: 'medium',
+    outlets: true,
+    coffee_available: true,
+    quietness: 3,
+    price_range: '$$',
+    opening_hours: ''
   })
 
   if (!isAuthenticated) {
-    navigate('/login')
-    return null
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <PlusCircle className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Please Login</h2>
+          <p className="text-gray-500 mb-4">Login to contribute new places</p>
+          <button onClick={() => navigate('/login')} className="px-6 py-2 bg-purple-600 text-white rounded-lg">
+            Go to Login
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }))
   }
 
   const handleImageUpload = (e) => {
     const files = Array.from(e.target.files)
-    const newPreviews = []
-    const newImages = []
-    
-    files.forEach(file => {
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error(`Image too large: ${file.name} (Max 10MB)`)
-        return
-      }
-      if (!file.type.startsWith('image/')) {
-        toast.error(`Not an image: ${file.name}`)
-        return
-      }
-      newImages.push(file)
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        newPreviews.push(reader.result)
-        if (newPreviews.length === newImages.length) {
-          setImagePreviews([...imagePreviews, ...newPreviews])
-          setImages([...images, ...newImages])
-        }
-      }
-      reader.readAsDataURL(file)
-    })
+    const newImages = files.map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+      name: file.name,
+      size: file.size,
+      type: file.type
+    }))
+    setImages(prev => [...prev, ...newImages])
   }
 
   const handleVideoUpload = (e) => {
     const files = Array.from(e.target.files)
-    const newPreviews = []
-    const newVideos = []
-    
-    files.forEach(file => {
-      if (file.size > 100 * 1024 * 1024) {
-        toast.error(`Video too large: ${file.name} (Max 100MB)`)
-        return
-      }
-      if (!file.type.startsWith('video/')) {
-        toast.error(`Not a video: ${file.name}`)
-        return
-      }
-      newVideos.push(file)
-      const url = URL.createObjectURL(file)
-      newPreviews.push(url)
-      setVideoPreviews([...videoPreviews, ...newPreviews])
-      setVideos([...videos, ...newVideos])
-    })
+    const newVideos = files.map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+      name: file.name,
+      size: file.size,
+      type: file.type
+    }))
+    setVideos(prev => [...prev, ...newVideos])
   }
 
   const removeImage = (index) => {
-    setImagePreviews(imagePreviews.filter((_, i) => i !== index))
-    setImages(images.filter((_, i) => i !== index))
+    URL.revokeObjectURL(images[index].preview)
+    setImages(prev => prev.filter((_, i) => i !== index))
   }
 
   const removeVideo = (index) => {
-    URL.revokeObjectURL(videoPreviews[index])
-    setVideoPreviews(videoPreviews.filter((_, i) => i !== index))
-    setVideos(videos.filter((_, i) => i !== index))
+    URL.revokeObjectURL(videos[index].preview)
+    setVideos(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const convertToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = (error) => reject(error)
+    })
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
-    if (!formData.name.trim()) {
-      toast.error('Place name is required')
-      return
-    }
-    if (!formData.address.trim()) {
-      toast.error('Address is required')
-      return
-    }
-    if (!formData.city.trim()) {
-      toast.error('City is required')
-      return
-    }
-    
     setLoading(true)
+    setUploadProgress(0)
     
     try {
-      // Upload images
+      const token = localStorage.getItem('token')
       const uploadedImages = []
-      for (const file of images) {
-        const formDataImg = new FormData()
-        formDataImg.append('file', file)
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/upload`, {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-          body: formDataImg
-        })
-        const data = await response.json()
-        uploadedImages.push(data.url)
-      }
-      
-      // Upload videos
       const uploadedVideos = []
-      for (const file of videos) {
-        const formDataVideo = new FormData()
-        formDataVideo.append('file', file)
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/upload`, {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-          body: formDataVideo
-        })
-        const data = await response.json()
-        uploadedVideos.push(data.url)
+      
+      // Upload images to backend or convert to base64
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i]
+        setUploadProgress(Math.round(((i + 0.5) / images.length) * 50))
+        try {
+          const base64 = await convertToBase64(img.file)
+          uploadedImages.push(base64)
+        } catch (err) {
+          console.error('Image conversion failed:', err)
+          uploadedImages.push(img.preview)
+        }
       }
       
-      // Create place with PENDING status
-      const placeData = {
-        name: formData.name,
-        address: formData.address,
-        city: formData.city,
-        description: formData.description,
-        hasWifi: formData.hasWifi,
-        hasPowerOutlets: formData.hasPowerOutlets,
-        hasCoffee: formData.hasCoffee,
-        priceLevel: formData.priceLevel,
-        placeType: formData.placeType,
-        images: uploadedImages,
-        videos: uploadedVideos,
-        status: 'PENDING'
+      // Upload videos to backend or store as base64
+      for (let i = 0; i < videos.length; i++) {
+        const vid = videos[i]
+        setUploadProgress(50 + Math.round(((i + 0.5) / videos.length) * 50))
+        try {
+          const base64 = await convertToBase64(vid.file)
+          uploadedVideos.push(base64)
+        } catch (err) {
+          console.error('Video conversion failed:', err)
+          uploadedVideos.push(vid.preview)
+        }
       }
       
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/places`, {
+      setUploadProgress(100)
+      
+      // Submit place with media
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/places`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + localStorage.getItem('token')
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(placeData)
+        body: JSON.stringify({
+          ...formData,
+          images: uploadedImages,
+          videos: uploadedVideos
+        })
       })
       
-      if (response.ok) {
-        const result = await response.json()
-        console.log('Place submitted:', result)
-        toast.success('Place submitted for review! Admin will review it soon.')
-        navigate('/places')
-      } else {
+      if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || 'Failed to submit')
+        throw new Error(error.message || 'Failed to submit place')
       }
+      
+      setSubmitted(true)
+      toast.success('Place submitted successfully! Waiting for admin approval.')
+      setTimeout(() => {
+        navigate('/places')
+      }, 2000)
     } catch (error) {
-      console.error('Failed to submit place:', error)
+      console.error('Submission error:', error)
       toast.error(error.message || 'Failed to submit place. Please try again.')
     } finally {
       setLoading(false)
+      setUploadProgress(0)
     }
+  }
+
+  if (submitted) {
+    return (
+      <div className={`${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'} min-h-screen flex items-center justify-center`}>
+        <div className="text-center">
+          <CheckCircle className="w-16 h-16 mx-auto text-green-500 mb-4" />
+          <h2 className="text-2xl font-bold mb-2">Thank You!</h2>
+          <p className="text-gray-500">Your place has been submitted for review.</p>
+          <p className="text-gray-500 mb-4">We'll notify you once it's approved.</p>
+          <button onClick={() => navigate('/places')} className="px-6 py-2 bg-purple-600 text-white rounded-lg">
+            Browse Places
+          </button>
+        </div>
+      </div>
+    )
   }
 
   const bgClass = isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
   const cardClass = isDarkMode ? 'bg-gray-800' : 'bg-white'
   const textClass = isDarkMode ? 'text-white' : 'text-gray-900'
-  const inputClass = isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200 text-gray-900'
+  const inputClass = isDarkMode 
+    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:ring-purple-500' 
+    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-purple-500'
+
+  const labelClass = isDarkMode ? 'text-gray-300' : 'text-gray-700'
 
   return (
-    <div className={`min-h-screen py-8 ${bgClass}`}>
-      <div className="container mx-auto px-4 max-w-3xl">
-        <div className={`rounded-2xl shadow-lg p-6 ${cardClass}`}>
-          <h1 className={`text-2xl font-bold mb-2 ${textClass}`}>Add New Place</h1>
-          <p className={`text-sm mb-6 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            Share a great workspace spot. Your submission will be reviewed by an admin.
+    <div className={`${bgClass} min-h-screen py-8`}>
+      <div className="container mx-auto px-4 max-w-2xl">
+        <div className="text-center mb-8">
+          <PlusCircle className="w-12 h-12 mx-auto text-purple-600 mb-4" />
+          <h1 className={`${textClass} text-3xl font-bold`}>
+            Contribute a Place
+          </h1>
+          <p className={isDarkMode ? 'text-gray-400' : 'text-gray-500'}>
+            Help others find great places to work remotely
           </p>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className={`block text-sm font-medium mb-1 ${textClass}`}>Place Name *</label>
-              <input 
-                type="text" 
-                required 
-                value={formData.name} 
-                onChange={(e) => setFormData({...formData, name: e.target.value})} 
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 ${inputClass}`} 
-                placeholder="e.g., Starbucks Reserve"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className={`block text-sm font-medium mb-1 ${textClass}`}>Address *</label>
-                <input 
-                  type="text" 
-                  required 
-                  value={formData.address} 
-                  onChange={(e) => setFormData({...formData, address: e.target.value})} 
-                  className={`w-full px-4 py-2 border rounded-lg ${inputClass}`} 
-                  placeholder="123 Main Street"
-                />
-              </div>
-              <div>
-                <label className={`block text-sm font-medium mb-1 ${textClass}`}>City *</label>
-                <input 
-                  type="text" 
-                  required 
-                  value={formData.city} 
-                  onChange={(e) => setFormData({...formData, city: e.target.value})} 
-                  className={`w-full px-4 py-2 border rounded-lg ${inputClass}`} 
-                  placeholder="New York"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className={`block text-sm font-medium mb-1 ${textClass}`}>Description</label>
-              <textarea 
-                rows="3" 
-                value={formData.description} 
-                onChange={(e) => setFormData({...formData, description: e.target.value})} 
-                className={`w-full px-4 py-2 border rounded-lg ${inputClass}`} 
-                placeholder="Describe the atmosphere, seating, noise level, etc."
-              />
-            </div>
-
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${textClass}`}>Amenities</label>
-              <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={formData.hasWifi} onChange={(e) => setFormData({...formData, hasWifi: e.target.checked})} className="w-4 h-4" />
-                  <Wifi className="w-4 h-4 text-blue-500" /> WiFi
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={formData.hasPowerOutlets} onChange={(e) => setFormData({...formData, hasPowerOutlets: e.target.checked})} className="w-4 h-4" />
-                  <Zap className="w-4 h-4 text-yellow-500" /> Power Outlets
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={formData.hasCoffee} onChange={(e) => setFormData({...formData, hasCoffee: e.target.checked})} className="w-4 h-4" />
-                  <Coffee className="w-4 h-4 text-amber-500" /> Coffee
-                </label>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className={`block text-sm font-medium mb-1 ${textClass}`}>Price Level</label>
-                <select 
-                  value={formData.priceLevel} 
-                  onChange={(e) => setFormData({...formData, priceLevel: e.target.value})} 
-                  className={`w-full px-4 py-2 border rounded-lg ${inputClass}`}
-                >
-                  <option value="CHEAP">$ - Cheap</option>
-                  <option value="MODERATE">$$ - Moderate</option>
-                  <option value="EXPENSIVE">$$$ - Expensive</option>
-                </select>
-              </div>
-              <div>
-                <label className={`block text-sm font-medium mb-1 ${textClass}`}>Place Type</label>
-                <select 
-                  value={formData.placeType} 
-                  onChange={(e) => setFormData({...formData, placeType: e.target.value})} 
-                  className={`w-full px-4 py-2 border rounded-lg ${inputClass}`}
-                >
-                  <option value="cafe">Cafe / Coffee Shop</option>
-                  <option value="library">Library</option>
-                  <option value="coworking">Coworking Space</option>
-                  <option value="restaurant">Restaurant</option>
-                  <option value="hotel">Hotel Lobby</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${textClass}`}>Photos</label>
-              <div className={`border-2 border-dashed rounded-lg p-6 text-center ${isDarkMode ? 'border-gray-700' : 'border-gray-300'}`}>
-                <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" id="image-upload" />
-                <label htmlFor="image-upload" className="cursor-pointer">
-                  <Image className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                  <p className="text-sm text-gray-500">Click to upload images</p>
-                  <p className="text-xs text-gray-400">PNG, JPG up to 10MB</p>
-                </label>
-              </div>
-              {imagePreviews.length > 0 && (
-                <div className="grid grid-cols-4 gap-4 mt-4">
-                  {imagePreviews.map((preview, idx) => (
-                    <div key={idx} className="relative">
-                      <img src={preview} alt="Preview" className="w-full h-20 object-cover rounded-lg" />
-                      <button type="button" onClick={() => removeImage(idx)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600">?</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${textClass}`}>Videos (Optional)</label>
-              <div className={`border-2 border-dashed rounded-lg p-6 text-center ${isDarkMode ? 'border-gray-700' : 'border-gray-300'}`}>
-                <input type="file" accept="video/*" multiple onChange={handleVideoUpload} className="hidden" id="video-upload" />
-                <label htmlFor="video-upload" className="cursor-pointer">
-                  <Video className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                  <p className="text-sm text-gray-500">Click to upload videos</p>
-                  <p className="text-xs text-gray-400">MP4, WebM up to 100MB</p>
-                </label>
-              </div>
-              {videoPreviews.length > 0 && (
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                  {videoPreviews.map((preview, idx) => (
-                    <div key={idx} className="relative">
-                      <video src={preview} className="w-full h-24 object-cover rounded-lg" controls />
-                      <button type="button" onClick={() => removeVideo(idx)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600">?</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <button 
-              type="submit" 
-              disabled={loading} 
-              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit for Review'}
-            </button>
-          </form>
         </div>
+
+        <form onSubmit={handleSubmit} className={`${cardClass} rounded-xl shadow-lg p-6`}>
+          {/* Basic Info */}
+          <div className="mb-4">
+            <label className={`${labelClass} block text-sm font-medium mb-2`}>Place Name *</label>
+            <input
+              type="text"
+              name="name"
+              required
+              value={formData.name}
+              onChange={handleChange}
+              className={`${inputClass} w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none transition`}
+              placeholder="e.g., Starbucks Downtown"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className={`${labelClass} block text-sm font-medium mb-2`}>Address *</label>
+            <input
+              type="text"
+              name="address"
+              required
+              value={formData.address}
+              onChange={handleChange}
+              className={`${inputClass} w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none transition`}
+              placeholder="Street address"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className={`${labelClass} block text-sm font-medium mb-2`}>City *</label>
+            <input
+              type="text"
+              name="city"
+              required
+              value={formData.city}
+              onChange={handleChange}
+              className={`${inputClass} w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none transition`}
+              placeholder="City name"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className={`${labelClass} block text-sm font-medium mb-2`}>Description</label>
+            <textarea
+              name="description"
+              rows="3"
+              value={formData.description}
+              onChange={handleChange}
+              className={`${inputClass} w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none transition`}
+              placeholder="Describe the atmosphere, seating, etc."
+            />
+          </div>
+
+          {/* Image Upload Section */}
+          <div className="mb-4">
+            <label className={`${labelClass} block text-sm font-medium mb-2`}>Photos</label>
+            <div 
+              onClick={() => fileInputRef.current?.click()}
+              className={`${cardClass} border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition hover:border-purple-500`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/jpg,image/webp"
+                multiple
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+              <Image className="w-10 h-10 mx-auto mb-2 text-gray-400" />
+              <p className="text-sm text-gray-500">Click to upload photos</p>
+              <p className="text-xs text-gray-400">PNG, JPG, WEBP up to 10MB each</p>
+            </div>
+            
+            {/* Image Previews */}
+            {images.length > 0 && (
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {images.map((img, idx) => (
+                  <div key={idx} className="relative group">
+                    <img src={img.preview} alt={`Preview ${idx + 1}`} className="w-full h-24 object-cover rounded-lg" />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(idx)}
+                      className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Video Upload Section */}
+          <div className="mb-4">
+            <label className={`${labelClass} block text-sm font-medium mb-2`}>Videos (Optional)</label>
+            <div 
+              onClick={() => videoInputRef.current?.click()}
+              className={`${cardClass} border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition hover:border-purple-500`}
+            >
+              <input
+                ref={videoInputRef}
+                type="file"
+                accept="video/mp4,video/webm"
+                multiple
+                onChange={handleVideoUpload}
+                className="hidden"
+              />
+              <Video className="w-10 h-10 mx-auto mb-2 text-gray-400" />
+              <p className="text-sm text-gray-500">Click to upload videos</p>
+              <p className="text-xs text-gray-400">MP4, WebM up to 50MB each</p>
+            </div>
+            
+            {/* Video Previews */}
+            {videos.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {videos.map((vid, idx) => (
+                  <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-gray-100 dark:bg-gray-700">
+                    <Video className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm flex-1 truncate">{vid.name}</span>
+                    <span className="text-xs text-gray-500">{(vid.size / (1024 * 1024)).toFixed(1)} MB</span>
+                    <button
+                      type="button"
+                      onClick={() => removeVideo(idx)}
+                      className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Amenities */}
+          <div className="mb-4">
+            <label className={`${labelClass} block text-sm font-medium mb-2`}>WiFi Speed</label>
+            <select
+              name="wifi"
+              value={formData.wifi}
+              onChange={handleChange}
+              className={`${inputClass} w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none transition`}
+            >
+              <option value="slow">🐢 Slow - Basic browsing</option>
+              <option value="medium">👍 Medium - Good for work</option>
+              <option value="fast">⚡ Fast - Video calls ready</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                name="outlets"
+                checked={formData.outlets}
+                onChange={handleChange}
+                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+              />
+              <span className={labelClass}>🔌 Power Outlets</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                name="coffee_available"
+                checked={formData.coffee_available}
+                onChange={handleChange}
+                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+              />
+              <span className={labelClass}>☕ Coffee Available</span>
+            </label>
+          </div>
+
+          <div className="mb-4">
+            <label className={`${labelClass} block text-sm font-medium mb-2`}>Quietness Level (1-5)</label>
+            <div className="flex items-center gap-2">
+              {[1, 2, 3, 4, 5].map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, quietness: level }))}
+                  className={`flex-1 py-2 rounded-lg transition ${formData.quietness === level 
+                    ? 'bg-purple-600 text-white' 
+                    : `${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`
+                  }`}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-between text-xs text-gray-500 mt-1 px-1">
+              <span>🔊 Noisy</span>
+              <span>💬 Chatty</span>
+              <span>📝 Focused</span>
+              <span>🤫 Quiet</span>
+              <span>🔇 Library</span>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <label className={`${labelClass} block text-sm font-medium mb-2`}>Price Range</label>
+            <select
+              name="price_range"
+              value={formData.price_range}
+              onChange={handleChange}
+              className={`${inputClass} w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none transition`}
+            >
+              <option value="$">$ - Budget (under $10)</option>
+              <option value="$$">$$ - Moderate ($10-20)</option>
+              <option value="$$$">$$$ - Premium ($20+)</option>
+            </select>
+          </div>
+
+          <div className="mb-6">
+            <label className={`${labelClass} block text-sm font-medium mb-2`}>Opening Hours</label>
+            <input
+              type="text"
+              name="opening_hours"
+              value={formData.opening_hours}
+              onChange={handleChange}
+              className={`${inputClass} w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none transition`}
+              placeholder="e.g., Mon-Fri: 8am-8pm, Sat-Sun: 9am-6pm"
+            />
+          </div>
+
+          {/* Upload Progress */}
+          {loading && uploadProgress > 0 && (
+            <div className="mb-4">
+              <div className="flex justify-between text-sm mb-1">
+                <span>Uploading...</span>
+                <span>{uploadProgress}%</span>
+              </div>
+              <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-purple-600 to-pink-600 transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                {uploadProgress > 0 ? `Uploading ${uploadProgress}%...` : 'Submitting...'}
+              </>
+            ) : (
+              <>
+                <Upload className="w-5 h-5" />
+                Submit Place
+              </>
+            )}
+          </button>
+
+          {/* Info Note */}
+          <p className="text-xs text-center text-gray-500 mt-4">
+            {images.length > 0 || videos.length > 0 
+              ? `📁 ${images.length} photo(s), ${videos.length} video(s) ready to upload`
+              : '📸 Add photos to help others discover this place'}
+          </p>
+        </form>
       </div>
     </div>
   )

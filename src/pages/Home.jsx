@@ -27,39 +27,45 @@ const Home = () => {
   const loadPlaces = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/places`)
-      const data = await response.json()
+      const data = await fetchPlaces()
       setPlaces(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Failed to fetch places:', error)
       toast.error('Failed to load places')
+      setPlaces([])
     } finally {
       setLoading(false)
     }
   }
 
   const handleSearch = async () => {
+    if (!search.trim()) {
+      loadPlaces()
+      return
+    }
     setLoading(true)
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/places?search=${search}`)
-      const data = await response.json()
-      setPlaces(Array.isArray(data) ? data : [])
+      const data = await fetchPlaces()
+      const filtered = data.filter(place => 
+        place.name?.toLowerCase().includes(search.toLowerCase()) ||
+        place.city?.toLowerCase().includes(search.toLowerCase()) ||
+        place.address?.toLowerCase().includes(search.toLowerCase())
+      )
+      setPlaces(filtered)
     } catch (error) {
       console.error('Search failed:', error)
+      toast.error('Search failed')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleFavorite = async (e, placeId) => {
-    e.preventDefault()
-    e.stopPropagation()
+  const handleFavoriteToggle = async (placeId) => {
     if (!isAuthenticated) {
       toast.error('Please login to save favorites')
       return
     }
-    const isFav = isFavorite(placeId)
-    if (isFav) {
+    if (isFavorite(placeId)) {
       await removeFavorite(placeId)
       toast.success('Removed from favorites')
     } else {
@@ -68,127 +74,162 @@ const Home = () => {
     }
   }
 
-  const handlePlaceClick = (place) => {
-    window.location.href = `/place/${place.id}`
+  const getWifiIcon = (speed) => {
+    if (speed === 'fast') return <Wifi className="w-3 h-3 text-green-500" />
+    if (speed === 'medium') return <Wifi className="w-3 h-3 text-yellow-500" />
+    return <Wifi className="w-3 h-3 text-red-500" />
   }
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-96">
+      <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
       </div>
     )
   }
 
+  const bgClass = isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
+  const cardClass = isDarkMode ? 'bg-gray-800' : 'bg-white'
+  const textClass = isDarkMode ? 'text-white' : 'text-gray-900'
+  const inputClass = isDarkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200 text-gray-900'
+
   return (
-    <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+    <div className={`${bgClass} min-h-screen`}>
       <div className="container mx-auto px-4 py-8">
-        <div className="text-center mb-8">
-          <h1 className={`text-4xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-            Find Your Workspace
-          </h1>
-          <p className={isDarkMode ? 'text-gray-400' : 'text-gray-600'}>
-            Discover laptop-friendly places with fast WiFi and power outlets
-          </p>
-        </div>
-        
-        <div className="max-w-md mx-auto mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search by name, address, or city..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 ${isDarkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200'}`}
-            />
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+          <div>
+            <h1 className={`${textClass} text-3xl font-bold`}>
+              Laptop-Friendly Places
+            </h1>
+            <p className={isDarkMode ? 'text-gray-400' : 'text-gray-600'}>
+              Find the perfect spot to work remotely
+            </p>
+          </div>
+          
+          {/* View Toggle */}
+          <div className="flex gap-2 bg-gray-200 dark:bg-gray-800 p-1 rounded-lg">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-lg transition ${viewMode === 'grid' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-400'}`}
+            >
+              <Grid className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setViewMode('map')}
+              className={`p-2 rounded-lg transition ${viewMode === 'map' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-400'}`}
+            >
+              <Map className="w-5 h-5" />
+            </button>
           </div>
         </div>
 
-        <div className="flex justify-center gap-4 mb-6">
+        {/* Search Bar */}
+        <div className="flex gap-2 mb-8">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              type="text"
+              placeholder="Search by name, city, or address..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+              className={`${inputClass} w-full pl-10 pr-4 py-3 rounded-xl border focus:ring-2 focus:ring-purple-500 outline-none transition`}
+            />
+          </div>
           <button
-            onClick={() => setViewMode('grid')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
-              viewMode === 'grid' 
-                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md' 
-                : `${isDarkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`
-            }`}
+            onClick={handleSearch}
+            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-semibold hover:shadow-lg transition"
           >
-            <Grid className="w-4 h-4" /> Grid View
-          </button>
-          <button
-            onClick={() => setViewMode('map')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
-              viewMode === 'map' 
-                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md' 
-                : `${isDarkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`
-            }`}
-          >
-            <Map className="w-4 h-4" /> Map View
+            Search
           </button>
         </div>
 
-        {viewMode === 'grid' && (
-          places.length === 0 ? (
-            <div className="text-center py-12">
-              <p className={isDarkMode ? 'text-gray-400' : 'text-gray-500'}>No places found.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {places.map((place) => {
-                const isFav = isFavorite(place.id)
-                return (
-                  <Link 
-                    key={place.id} 
-                    to={`/place/${place.id}`}
-                    className={`group rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
-                  >
-                    <div className="relative h-48 overflow-hidden bg-gray-100 dark:bg-gray-700">
-                      <img
-                        src={place.images?.[0] || 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=400&h=200&fit=crop'}
-                        alt={place.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+        {/* Content */}
+        {places.length === 0 ? (
+          <div className="text-center py-12">
+            <p className={isDarkMode ? 'text-gray-400' : 'text-gray-500'}>
+              No places found. Try a different search.
+            </p>
+          </div>
+        ) : viewMode === 'map' ? (
+          <div className="h-96 rounded-xl overflow-hidden">
+            <MapComponent places={places} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {places.map((place) => (
+              <div
+                key={place.id}
+                className={`${cardClass} rounded-xl shadow-lg overflow-hidden transition hover:scale-[1.02] hover:shadow-xl`}
+              >
+                <Link to={`/place/${place.id}`}>
+                  <div className="h-48 bg-gradient-to-r from-purple-600 to-pink-600 relative">
+                    {place.image ? (
+                      <img src={place.image} alt={place.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Coffee className="w-12 h-12 text-white opacity-50" />
+                      </div>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault()
+                        handleFavoriteToggle(place.id)
+                      }}
+                      className="absolute top-2 right-2 p-2 bg-white/90 dark:bg-gray-900/90 rounded-full shadow-md"
+                    >
+                      <Heart
+                        className={`w-5 h-5 ${isFavorite(place.id) ? 'fill-red-500 text-red-500' : 'text-gray-600 dark:text-gray-400'}`}
                       />
-                      <button
-                        onClick={(e) => handleFavorite(e, place.id)}
-                        className="absolute top-3 right-3 p-2 bg-white/90 dark:bg-gray-800/90 rounded-full shadow-lg hover:scale-110 transition"
-                      >
-                        <Heart className={isFav ? "w-4 h-4 fill-red-500 text-red-500" : "w-4 h-4 text-gray-600 dark:text-gray-400"} />
-                      </button>
-                    </div>
-                    <div className="p-4">
-                      <h3 className={`font-bold text-lg mb-1 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                        {place.name}
-                      </h3>
-                      <div className="flex items-center gap-1 mb-2">
-                        <MapPin className="w-4 h-4 text-gray-400" />
-                        <p className={`text-sm truncate ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{place.address}, {place.city}</p>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex gap-2">
-                          {place.hasWifi && <Wifi className="w-4 h-4 text-blue-500" />}
-                          {place.hasPowerOutlets && <Zap className="w-4 h-4 text-yellow-500" />}
-                          {place.hasCoffee && <Coffee className="w-4 h-4 text-amber-500" />}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                          <span className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                            {place.averageRating?.toFixed(1) || 'New'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                    </button>
+                  </div>
+                </Link>
+                
+                <div className="p-4">
+                  <Link to={`/place/${place.id}`}>
+                    <h3 className={`${textClass} font-bold text-lg mb-2`}>
+                      {place.name}
+                    </h3>
                   </Link>
-                )
-              })}
-            </div>
-          )
-        )}
-
-        {viewMode === 'map' && (
-          <div className="rounded-xl overflow-hidden shadow-lg">
-            <MapComponent places={places} onPlaceClick={handlePlaceClick} />
+                  
+                  <div className="flex items-center gap-1 mb-2 text-sm text-gray-500">
+                    <MapPin className="w-3 h-3" />
+                    <span>{place.city || place.address?.split(',')[0] || 'Unknown'}</span>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {place.wifi && (
+                      <span className="flex items-center gap-1 text-xs px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full">
+                        {getWifiIcon(place.wifi_speed)} {place.wifi_speed || place.wifi}
+                      </span>
+                    )}
+                    {place.outlets && (
+                      <span className="flex items-center gap-1 text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full">
+                        <Zap className="w-3 h-3" /> Outlets
+                      </span>
+                    )}
+                    {place.quietness && (
+                      <span className="flex items-center gap-1 text-xs px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full">
+                        <Star className="w-3 h-3" /> Quiet {place.quietness}/5
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                      <span className="text-sm font-semibold">
+                        {place.rating || 4.5}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        ({place.review_count || 0} reviews)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

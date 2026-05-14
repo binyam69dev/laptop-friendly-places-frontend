@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 import { AnimatePresence } from 'framer-motion'
 import App from './App'
-import './styles/index.css'
+import './index.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
