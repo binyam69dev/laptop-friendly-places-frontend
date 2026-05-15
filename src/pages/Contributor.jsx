@@ -1,13 +1,13 @@
-﻿import { useState, useRef } from 'react'
+﻿import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PlusCircle, MapPin, Wifi, Zap, Coffee, Star, Loader2, CheckCircle, Upload, Image, Video, X, Trash2 } from 'lucide-react'
+import { PlusCircle, MapPin, Wifi, Zap, Coffee, Star, Loader2, CheckCircle, Upload, Image, Video, X, Trash2, Play } from 'lucide-react'
 import useAuthStore from '../store/useAuthStore'
 import { useDarkMode } from '../context/DarkModeContext'
 import { toast } from 'sonner'
 
 const Contributor = () => {
   const navigate = useNavigate()
-  const { isAuthenticated } = useAuthStore()
+  const { user, isAuthenticated } = useAuthStore()
   const { isDarkMode } = useDarkMode()
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -29,6 +29,19 @@ const Contributor = () => {
     price_range: '$$',
     opening_hours: ''
   })
+
+  useEffect(() => {
+    // Check if user is authenticated and has contributor role
+    if (!isAuthenticated) {
+      navigate('/login')
+      return
+    }
+    
+    // Optional: Check if user has contributor role
+    if (user?.role !== 'contributor' && user?.role !== 'admin') {
+      toast.info('You need contributor status to add places')
+    }
+  }, [isAuthenticated, user, navigate])
 
   if (!isAuthenticated) {
     return (
@@ -109,7 +122,7 @@ const Contributor = () => {
       // Upload images to backend or convert to base64
       for (let i = 0; i < images.length; i++) {
         const img = images[i]
-        setUploadProgress(Math.round(((i + 0.5) / images.length) * 50))
+        setUploadProgress(Math.round(((i + 0.5) / (images.length + videos.length)) * 50))
         try {
           const base64 = await convertToBase64(img.file)
           uploadedImages.push(base64)
@@ -122,7 +135,7 @@ const Contributor = () => {
       // Upload videos to backend or store as base64
       for (let i = 0; i < videos.length; i++) {
         const vid = videos[i]
-        setUploadProgress(50 + Math.round(((i + 0.5) / videos.length) * 50))
+        setUploadProgress(50 + Math.round(((i + 0.5) / (images.length + videos.length)) * 50))
         try {
           const base64 = await convertToBase64(vid.file)
           uploadedVideos.push(base64)
@@ -135,7 +148,7 @@ const Contributor = () => {
       setUploadProgress(100)
       
       // Submit place with media
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/places`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/places`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -144,7 +157,9 @@ const Contributor = () => {
         body: JSON.stringify({
           ...formData,
           images: uploadedImages,
-          videos: uploadedVideos
+          videos: uploadedVideos,
+          submittedBy: user?.name || user?.email,
+          status: 'pending'
         })
       })
       
@@ -156,7 +171,7 @@ const Contributor = () => {
       setSubmitted(true)
       toast.success('Place submitted successfully! Waiting for admin approval.')
       setTimeout(() => {
-        navigate('/places')
+        navigate('/my-contributions')
       }, 2000)
     } catch (error) {
       console.error('Submission error:', error)
@@ -175,8 +190,8 @@ const Contributor = () => {
           <h2 className="text-2xl font-bold mb-2">Thank You!</h2>
           <p className="text-gray-500">Your place has been submitted for review.</p>
           <p className="text-gray-500 mb-4">We'll notify you once it's approved.</p>
-          <button onClick={() => navigate('/places')} className="px-6 py-2 bg-purple-600 text-white rounded-lg">
-            Browse Places
+          <button onClick={() => navigate('/my-contributions')} className="px-6 py-2 bg-purple-600 text-white rounded-lg">
+            View My Contributions
           </button>
         </div>
       </div>
@@ -203,6 +218,11 @@ const Contributor = () => {
           <p className={isDarkMode ? 'text-gray-400' : 'text-gray-500'}>
             Help others find great places to work remotely
           </p>
+          {user?.role === 'user' && (
+            <div className="mt-2 p-2 bg-yellow-100 dark:bg-yellow-900/20 rounded-lg text-sm text-yellow-800 dark:text-yellow-300">
+              ⚡ Your submissions will need admin approval before being published
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className={`${cardClass} rounded-xl shadow-lg p-6`}>
@@ -307,17 +327,17 @@ const Contributor = () => {
               <input
                 ref={videoInputRef}
                 type="file"
-                accept="video/mp4,video/webm"
+                accept="video/mp4,video/webm,video/quicktime"
                 multiple
                 onChange={handleVideoUpload}
                 className="hidden"
               />
               <Video className="w-10 h-10 mx-auto mb-2 text-gray-400" />
               <p className="text-sm text-gray-500">Click to upload videos</p>
-              <p className="text-xs text-gray-400">MP4, WebM up to 50MB each</p>
+              <p className="text-xs text-gray-400">MP4, WebM, MOV up to 50MB each</p>
             </div>
             
-            {/* Video Previews */}
+            {/* Video Previews with Play Button */}
             {videos.length > 0 && (
               <div className="mt-3 space-y-2">
                 {videos.map((vid, idx) => (
@@ -325,6 +345,27 @@ const Contributor = () => {
                     <Video className="w-4 h-4 text-purple-600" />
                     <span className="text-sm flex-1 truncate">{vid.name}</span>
                     <span className="text-xs text-gray-500">{(vid.size / (1024 * 1024)).toFixed(1)} MB</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Preview video in a modal or new tab
+                        const videoWindow = window.open()
+                        videoWindow.document.write(`
+                          <html>
+                            <head><title>Video Preview</title></head>
+                            <body style="margin:0; display:flex; justify-content:center; align-items:center; min-height:100vh; background:#000;">
+                              <video controls autoplay style="max-width:100%; max-height:100vh;">
+                                <source src="${vid.preview}" type="${vid.type}">
+                                Your browser does not support the video tag.
+                              </video>
+                            </body>
+                          </html>
+                        `)
+                      }}
+                      className="p-1 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
+                    >
+                      <Play className="w-4 h-4" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => removeVideo(idx)}
@@ -467,7 +508,7 @@ const Contributor = () => {
           <p className="text-xs text-center text-gray-500 mt-4">
             {images.length > 0 || videos.length > 0 
               ? `📁 ${images.length} photo(s), ${videos.length} video(s) ready to upload`
-              : '📸 Add photos to help others discover this place'}
+              : '📸 Add photos and videos to help others discover this place'}
           </p>
         </form>
       </div>
@@ -476,4 +517,3 @@ const Contributor = () => {
 }
 
 export default Contributor
-

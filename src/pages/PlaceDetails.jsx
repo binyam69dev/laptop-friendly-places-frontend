@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Wifi, Zap, Coffee, Star, MapPin, Clock, Heart, User, Calendar, Loader2, Send } from 'lucide-react'
+import { ArrowLeft, Wifi, Zap, Coffee, Star, MapPin, Clock, Heart, User, Calendar, Loader2, Send, Video, Image as ImageIcon, Play, X, Award } from 'lucide-react'
 import { fetchPlaceById } from '../services/api'
 import useAuthStore from '../store/useAuthStore'
 import usePlaceStore from '../store/usePlaceStore'
@@ -21,11 +21,29 @@ const PlaceDetails = () => {
   const [comment, setComment] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [hoveredRating, setHoveredRating] = useState(0)
+  const [selectedMedia, setSelectedMedia] = useState(null)
+  const [mediaType, setMediaType] = useState(null)
+  const [currentMediaIndex, setCurrentMediaIndex] = useState(0)
+  const [allMedia, setAllMedia] = useState([])
 
   useEffect(() => {
     fetchPlace()
     fetchReviews()
   }, [id])
+
+  // Combine all media for gallery view
+  useEffect(() => {
+    if (place) {
+      const media = []
+      if (place.images && place.images.length) {
+        place.images.forEach(img => media.push({ type: 'image', url: img }))
+      }
+      if (place.videos && place.videos.length) {
+        place.videos.forEach(vid => media.push({ type: 'video', url: vid }))
+      }
+      setAllMedia(media)
+    }
+  }, [place])
 
   const fetchPlace = async () => {
     setLoading(true)
@@ -125,11 +143,41 @@ const PlaceDetails = () => {
     }
   }
 
+  const openMediaViewer = (index) => {
+    setCurrentMediaIndex(index)
+    setSelectedMedia(allMedia[index].url)
+    setMediaType(allMedia[index].type)
+  }
+
+  const nextMedia = () => {
+    const nextIndex = (currentMediaIndex + 1) % allMedia.length
+    setCurrentMediaIndex(nextIndex)
+    setSelectedMedia(allMedia[nextIndex].url)
+    setMediaType(allMedia[nextIndex].type)
+  }
+
+  const previousMedia = () => {
+    const prevIndex = (currentMediaIndex - 1 + allMedia.length) % allMedia.length
+    setCurrentMediaIndex(prevIndex)
+    setSelectedMedia(allMedia[prevIndex].url)
+    setMediaType(allMedia[prevIndex].type)
+  }
+
   const getWifiIcon = () => {
     const speed = place?.wifi_speed || place?.wifi
     if (speed === 'fast') return <Wifi className="w-5 h-5 text-green-500" />
     if (speed === 'medium') return <Wifi className="w-5 h-5 text-yellow-500" />
     return <Wifi className="w-5 h-5 text-red-500" />
+  }
+
+  const getPriceRangeDisplay = (priceRange) => {
+    if (!priceRange) return null
+    const ranges = {
+      '$': '💰 Budget (Under $10)',
+      '$$': '💰💰 Moderate ($10-20)',
+      '$$$': '💰💰💰 Premium ($20+)'
+    }
+    return ranges[priceRange] || priceRange
   }
 
   const bgClass = isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
@@ -161,14 +209,49 @@ const PlaceDetails = () => {
 
         {/* Place Header */}
         <div className={`${cardClass} rounded-2xl shadow-lg overflow-hidden mb-8`}>
-          <div className="h-64 bg-gradient-to-r from-purple-600 to-pink-600 relative">
-            {place.image ? (
-              <img src={place.image} alt={place.name} className="w-full h-full object-cover" />
+          {/* Hero Image Section */}
+          <div className="relative">
+            {place.images && place.images.length > 0 ? (
+              <>
+                <div className="h-64 md:h-96 bg-gradient-to-r from-purple-600 to-pink-600 relative">
+                  <img 
+                    src={place.images[0]} 
+                    alt={place.name} 
+                    className="w-full h-full object-cover"
+                  />
+                  
+                  {/* Media Gallery Indicator */}
+                  {(place.images.length > 1 || (place.videos && place.videos.length > 0)) && (
+                    <div className="absolute bottom-4 left-4 bg-black/70 text-white px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4" />
+                      <span>{place.images.length} photos</span>
+                      {place.videos && place.videos.length > 0 && (
+                        <>
+                          <Video className="w-4 h-4 ml-2" />
+                          <span>{place.videos.length} videos</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* View All Media Button */}
+                  {allMedia.length > 0 && (
+                    <button
+                      onClick={() => openMediaViewer(0)}
+                      className="absolute bottom-4 right-4 bg-black/70 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-black/80 transition"
+                    >
+                      <Play className="w-4 h-4" />
+                      View All Media
+                    </button>
+                  )}
+                </div>
+              </>
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
+              <div className="h-64 bg-gradient-to-r from-purple-600 to-pink-600 flex items-center justify-center relative">
                 <Coffee className="w-20 h-20 text-white opacity-50" />
               </div>
             )}
+            
             <button
               onClick={handleFavorite}
               className="absolute top-4 right-4 p-3 bg-white/90 dark:bg-gray-900/90 rounded-full shadow-md hover:scale-110 transition"
@@ -180,15 +263,39 @@ const PlaceDetails = () => {
           </div>
 
           <div className="p-6">
-            <h1 className={`${textClass} text-3xl font-bold mb-2`}>
-              {place.name}
-            </h1>
+            <div className="flex items-start justify-between mb-2">
+              <h1 className={`${textClass} text-3xl font-bold`}>
+                {place.name}
+              </h1>
+              {/* Price Range Badge */}
+              {place.price_range && (
+                <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-sm">
+                  {getPriceRangeDisplay(place.price_range)}
+                </span>
+              )}
+            </div>
             
             <div className="flex items-center gap-2 mb-4 text-gray-500">
               <MapPin className="w-4 h-4" />
               <span>{place.address}, {place.city}</span>
             </div>
 
+            {/* Contributor Info */}
+            {place.submittedBy && (
+              <div className="mb-4 p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center gap-2">
+                <Award className="w-4 h-4 text-purple-600" />
+                <span className="text-sm text-purple-700 dark:text-purple-300">
+                  Contributed by: {place.submittedBy}
+                </span>
+                {place.status === 'pending' && (
+                  <span className="ml-2 text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">
+                    Pending Approval
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Amenities */}
             <div className="flex flex-wrap gap-3 mb-6">
               {place.wifi && (
                 <span className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
@@ -236,6 +343,65 @@ const PlaceDetails = () => {
             )}
           </div>
         </div>
+
+        {/* Media Gallery Section (if more than 1 media) */}
+        {allMedia.length > 1 && (
+          <div className={`${cardClass} rounded-2xl shadow-lg p-6 mb-8`}>
+            <h2 className={`${textClass} text-xl font-bold mb-4 flex items-center gap-2`}>
+              <ImageIcon className="w-5 h-5" />
+              Media Gallery
+            </h2>
+            
+            {/* Thumbnail Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {allMedia.slice(0, 6).map((media, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => openMediaViewer(idx)}
+                  className="relative cursor-pointer rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 aspect-video group hover:opacity-90 transition"
+                >
+                  {media.type === 'image' ? (
+                    <img 
+                      src={media.url} 
+                      alt={`Media ${idx + 1}`} 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <>
+                      <video 
+                        src={media.url} 
+                        className="w-full h-full object-cover"
+                        poster={place.images?.[0]}
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition">
+                        <Play className="w-8 h-8 text-white" />
+                      </div>
+                    </>
+                  )}
+                  
+                  {/* Media Type Badge */}
+                  <div className="absolute top-2 right-2 bg-black/60 text-white p-1 rounded text-xs">
+                    {media.type === 'image' ? '📷' : '🎥'}
+                  </div>
+                </div>
+              ))}
+              
+              {allMedia.length > 6 && (
+                <div className="relative cursor-pointer rounded-lg overflow-hidden bg-gradient-to-br from-purple-600 to-pink-600 aspect-video flex items-center justify-center group">
+                  <span className="text-white text-2xl font-bold">+{allMedia.length - 6}</span>
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                    <button 
+                      onClick={() => openMediaViewer(0)}
+                      className="text-white text-sm"
+                    >
+                      View All
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Reviews Section */}
         <div className={`${cardClass} rounded-2xl shadow-lg p-6`}>
@@ -332,8 +498,78 @@ const PlaceDetails = () => {
           )}
         </div>
       </div>
+
+      {/* Media Modal */}
+      {selectedMedia && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4"
+          onClick={() => setSelectedMedia(null)}
+        >
+          <button 
+            onClick={() => setSelectedMedia(null)}
+            className="absolute top-4 right-4 text-white hover:text-gray-300 z-10 transition"
+          >
+            <X className="w-8 h-8" />
+          </button>
+          
+          {/* Navigation Buttons */}
+          {allMedia.length > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); previousMedia(); }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-white hover:text-gray-300 bg-black/50 p-2 rounded-full transition z-10"
+              >
+                <ChevronLeft className="w-8 h-8" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); nextMedia(); }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-white hover:text-gray-300 bg-black/50 p-2 rounded-full transition z-10"
+              >
+                <ChevronRight className="w-8 h-8" />
+              </button>
+              
+              {/* Media Counter */}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-sm">
+                {currentMediaIndex + 1} / {allMedia.length}
+              </div>
+            </>
+          )}
+          
+          {mediaType === 'image' ? (
+            <img 
+              src={selectedMedia} 
+              alt="Full size" 
+              className="max-w-full max-h-full object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <video 
+              controls 
+              autoPlay 
+              className="max-w-full max-h-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <source src={selectedMedia} />
+              Your browser does not support the video tag.
+            </video>
+          )}
+        </div>
+      )}
     </div>
   )
 }
+
+// Add ChevronLeft/Right if not imported
+const ChevronLeft = ({ className }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+  </svg>
+)
+
+const ChevronRight = ({ className }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+)
 
 export default PlaceDetails
